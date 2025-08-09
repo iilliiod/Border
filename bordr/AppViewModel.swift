@@ -12,7 +12,6 @@ class AppViewModel: ObservableObject {
 	@Published var originalImages: [NSImage?] = []
 	@Published var processedImages: [NSImage?] = []
 	@Published var isLoading: Bool = false
-	@Published var isMontage: Bool = false
 	@Published var errorMessage: String?
 	@Published var inputImageURLs: [URL] = [] // Keep track of the selected input file URL
 	@Published var currentImageIndex: Int = 0 {
@@ -61,7 +60,6 @@ class AppViewModel: ObservableObject {
 			self.originalImages = []
 			self.processedImages = []
 			self.errorMessage = nil
-			self.isMontage = false
 			
 			openPanel.urls.forEach { img in
 				do {
@@ -87,18 +85,56 @@ class AppViewModel: ObservableObject {
 		return outputURL
 	}
 	
+	// MARK: processSelectedImagesAsCollage()
+	func processSelectedImagesAsCollage() {
+		self.isLoading = true
+		self.errorMessage = nil // Clear previous error
+
+		Task { // Run the async operation in a Task
+			do {
+				let processedFileURL = try await imageMagickProcessor.processCollage(
+					inputPaths: inputImageURLs,
+					outputPath: inputImageURLs.first!.deletingLastPathComponent().appendingPathComponent("__collage", conformingTo: .jpeg),
+					commandArguments: imagemagickMontageArgs
+				)
+				
+				// Update UI on the main actor
+				await MainActor.run {
+					// might be off here
+					if let processedData = try? Data(contentsOf: processedFileURL),
+					   let image = NSImage(data: processedData) {
+						self.processedImages.append(image)
+					} else {
+						self.errorMessage = "Failed to load processed image from disk."
+					}
+					self.isLoading = false
+				}
+			} catch {
+				// Update UI on the main actor
+				await MainActor.run {
+					
+					print("output urls: \(inputImageURLs)")
+					
+					self.errorMessage = "Processing failed: \(error.localizedDescription)"
+					self.isLoading = false
+				}
+			}
+		}
+	}
+
+	
 	// MARK: processSelectedImages()
 	func processSelectedImages() {
 		self.isLoading = true
 		self.errorMessage = nil // Clear previous error
-		
-		if isMontage {
+
+		inputImageURLs.forEach { url in
 			Task { // Run the async operation in a Task
 				do {
-					let processedFileURL = try await imageMagickProcessor.processCollage(
-						inputPaths: inputImageURLs,
-						outputPath: inputImageURLs.first!.deletingLastPathComponent().appendingPathComponent("__collage", conformingTo: .jpeg),
-						commandArguments: imagemagickMontageArgs
+					let processedFileURL = try await imageMagickProcessor.processImage(
+						inputPath: url,
+						outputPath: generateOutputURL(url: url),
+						commandArguments: imagemagickArgs
 					)
 					
 					// Update UI on the main actor
@@ -116,49 +152,14 @@ class AppViewModel: ObservableObject {
 					// Update UI on the main actor
 					await MainActor.run {
 						
-						print("output urls: \(inputImageURLs)")
+						print("output url: \(url)")
 						
 						self.errorMessage = "Processing failed: \(error.localizedDescription)"
 						self.isLoading = false
 					}
 				}
 			}
-
-		} else {
-			inputImageURLs.forEach { url in
-				Task { // Run the async operation in a Task
-					do {
-						let processedFileURL = try await imageMagickProcessor.processImage(
-							inputPath: url,
-							outputPath: generateOutputURL(url: url),
-							commandArguments: imagemagickArgs
-						)
-						
-						// Update UI on the main actor
-						await MainActor.run {
-							// might be off here
-							if let processedData = try? Data(contentsOf: processedFileURL),
-							   let image = NSImage(data: processedData) {
-								self.processedImages.append(image)
-							} else {
-								self.errorMessage = "Failed to load processed image from disk."
-							}
-							self.isLoading = false
-						}
-					} catch {
-						// Update UI on the main actor
-						await MainActor.run {
-							
-							print("output url: \(url)")
-							
-							self.errorMessage = "Processing failed: \(error.localizedDescription)"
-							self.isLoading = false
-						}
-					}
-				}
-			}
 		}
-
 	}
 
 	func saveProcessedImage() {

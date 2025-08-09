@@ -58,8 +58,7 @@ struct HeaderView: View {
 			.padding(.horizontal)
 
 			Button("Collagify") {
-				viewModel.isMontage = true;
-				viewModel.processSelectedImages()
+				viewModel.processSelectedImagesAsCollage()
 			}
 			.disabled(viewModel.originalImages.isEmpty)
 			.padding(.horizontal)
@@ -89,7 +88,7 @@ struct OriginalImagesView: View {
 			
 			if !viewModel.originalImages.isEmpty {
 				
-				Image(nsImage: viewModel.originalImages[currentImageIndex]!)
+				Image(nsImage: viewModel.originalImages[currentImageIndex <= viewModel.originalImages.count - 1 ? currentImageIndex : viewModel.originalImages.count - 1]!)
 					.resizable()
 					.aspectRatio(contentMode: .fit)
 					.frame(maxWidth: 400, maxHeight: 400)
@@ -145,7 +144,7 @@ struct NavigationControlsView: View {
 	}
 	
 	func goNext() {
-		if currentImageIndex < viewModel.originalImages.count - 1 {
+		if currentImageIndex < viewModel.processedImages.count - 1 {
 			currentImageIndex += 1
 		}
 	}
