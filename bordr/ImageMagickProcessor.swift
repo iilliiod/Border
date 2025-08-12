@@ -21,6 +21,11 @@ class ImageMagickProcessor {
 	/// - Returns: The URL of the successfully processed output image.
 	func processImage(inputPath: URL, outputPath: URL, commandArguments: [String]) async throws -> URL {
 		
+		// Check if the output fle exists
+		guard !FileManager.default.fileExists(atPath: outputPath.path) else {
+			throw ImageMagickError.fileAlreadyExists(outputPath)
+		}
+		
 		// Ensure the input file exists
 		guard FileManager.default.fileExists(atPath: inputPath.path) else {
 			throw ImageMagickError.fileNotFound(inputPath)
@@ -52,7 +57,7 @@ class ImageMagickProcessor {
 		
 		let fullCommandString = commandParts.joined(separator: " ")
 		
-		// --- NEW: Pass the command string as an argument to the shell with -c ---
+		// Pass the command string as an argument to the shell with -c ---
 		process.arguments = ["-c", fullCommandString]
 		
 		// --- DEBUG PRINT: Log the full command executed by the shell ---
@@ -130,7 +135,7 @@ class ImageMagickProcessor {
 		
 		let fullCommandString = commandParts.joined(separator: " ")
 		
-		// --- NEW: Pass the command string as an argument to the shell with -c ---
+		// Pass the command string as an argument to the shell with -c ---
 		process.arguments = ["-c", fullCommandString]
 		
 		// --- DEBUG PRINT: Log the full command executed by the shell ---
@@ -169,19 +174,20 @@ class ImageMagickProcessor {
 		}
 
 	}
+}
 
+enum ImageMagickError: Error, LocalizedError {
+	case fileNotFound(URL)
+	case fileAlreadyExists(URL)
+	case commandFailed(statusCode: Int32, message: String)
+	case executableNotFound // If magick can't be found at common paths
 
-	enum ImageMagickError: Error, LocalizedError {
-		case fileNotFound(URL)
-		case commandFailed(statusCode: Int32, message: String)
-		case executableNotFound // If magick can't be found at common paths
-
-		var errorDescription: String? {
-			switch self {
+	var errorDescription: String? {
+		switch self {
 			case .fileNotFound(let url): return "Input file not found: \(url.lastPathComponent)"
+			case .fileAlreadyExists(let url): return "Output file already exists: \(url.lastPathComponent)"
 			case .commandFailed(let statusCode, let message): return "ImageMagick command failed with status \(statusCode): \(message)"
 			case .executableNotFound: return "ImageMagick executable 'magick' not found. Please ensure it's installed (e.g., via Homebrew in /usr/local/bin/magick or /opt/homebrew/bin/magick)."
-			}
 		}
 	}
 }

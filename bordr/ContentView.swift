@@ -57,6 +57,21 @@ struct HeaderView: View {
 			}
 			.disabled(viewModel.originalImages.isEmpty || viewModel.isLoading)
 			.padding(.horizontal)
+			
+			if !viewModel.originalImages.isEmpty {
+				Button {
+					viewModel.isAppending = true
+					viewModel.selectImage()
+					
+					if !viewModel.processedImages.isEmpty {
+						viewModel.processSelectedImages()
+					}
+				} label: {
+					Image(systemName: "plus")
+				}
+				.disabled(viewModel.originalImages.isEmpty || viewModel.isLoading)
+				.padding(.horizontal)
+			}
 
 			Button("Collagify") {
 				viewModel.processSelectedImagesAsCollage()
@@ -116,7 +131,7 @@ struct ProcessedImagesView: View {
 				.font(.headline)
 			
 			if !viewModel.processedImages.isEmpty {
-				Image(nsImage: viewModel.processedImages[currentImageIndex]!)
+				Image(nsImage: viewModel.processedImages[min(currentImageIndex, viewModel.processedImages.count - 1)]!)
 					.resizable()
 					.aspectRatio(contentMode: .fit)
 					.frame(maxWidth: 400, maxHeight: 400)
@@ -145,14 +160,11 @@ struct NavigationControlsView: View {
 	}
 	
 	func goNext() {
-		if viewModel.processedImages.isEmpty {
-			if currentImageIndex < viewModel.originalImages.count - 1 {
-				currentImageIndex += 1
-			}
-		} else if currentImageIndex < viewModel.processedImages.count - 1 {
+		if currentImageIndex < max(viewModel.originalImages.count - 1, viewModel.processedImages.count - 1) {
 			currentImageIndex += 1
 		}
 	}
+	
 	var body: some View {
 		// Navigation Controls
 		HStack {
@@ -164,12 +176,12 @@ struct NavigationControlsView: View {
 				}
 				.disabled(currentImageIndex == 0)
 				
-				Text("\(currentImageIndex + 1) / \(viewModel.processedImages.isEmpty ? viewModel.originalImages.count : viewModel.processedImages.count)")
+				Text("\(currentImageIndex + 1) / \(viewModel.processedImages.isEmpty ? viewModel.originalImages.count : max(viewModel.originalImages.count, viewModel.processedImages.count))")
 				
 				Button(action: goNext) {
 					Image(systemName: "chevron.right")
 				}
-				.disabled(viewModel.processedImages.isEmpty ? currentImageIndex == viewModel.originalImages.count - 1 : currentImageIndex == viewModel.processedImages.count - 1)
+				.disabled(viewModel.processedImages.isEmpty ? currentImageIndex == viewModel.originalImages.count - 1 : currentImageIndex == max(viewModel.processedImages.count - 1, viewModel.originalImages.count - 1))
 				
 				Spacer()
 			}

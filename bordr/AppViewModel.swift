@@ -12,6 +12,7 @@ class AppViewModel: ObservableObject {
 	@Published var originalImages: [NSImage?] = []
 	@Published var processedImages: [NSImage?] = []
 	@Published var isLoading: Bool = false
+	@Published var isAppending: Bool = false
 	@Published var errorMessage: String?
 	@Published var inputImageURLs: [URL] = [] // Keep track of the selected input file URL
 	@Published var currentImageIndex: Int = 0 {
@@ -56,9 +57,17 @@ class AppViewModel: ObservableObject {
 		openPanel.canChooseFiles = true
 		
 		if openPanel.runModal() == .OK {
-			self.inputImageURLs = openPanel.urls.sorted {
-				$0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
+			if !self.isAppending {
+				self.inputImageURLs = openPanel.urls.sorted {
+					$0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedDescending
+				}
+			} else {
+				let allURLs = Set(self.inputImageURLs + openPanel.urls)
+				self.inputImageURLs = allURLs.sorted {
+					$0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedDescending
+				}
 			}
+			
 			self.originalImages = []
 			self.errorMessage = nil
 
@@ -71,10 +80,12 @@ class AppViewModel: ObservableObject {
 					self.errorMessage = "Could not load image: \(error.localizedDescription)"
 				}
 			}
+			
+			self.isAppending = false
 		}
 	}
 	
-	func generateOutputURL(url: URL) -> URL {
+	private func generateOutputURL(url: URL) -> URL {
 		var outputURL: URL
 		
 		let outputFileName = "\(url.lastPathComponent.replacingOccurrences(of: ".jpg", with: "_"))_processed.jpg"
@@ -137,6 +148,8 @@ class AppViewModel: ObservableObject {
 							commandArguments: self.imagemagickArgs
 						)
 						return processedFileURL
+					} catch ImageMagickError.fileAlreadyExists {
+						return self.generateOutputURL(url: url)
 					} catch {
 						// Update UI on the main actor
 						await MainActor.run {
@@ -170,7 +183,7 @@ class AppViewModel: ObservableObject {
 		self.currentImageIndex = 0 // Reset index
 		
 		Task {
-			let sortedProcessedImageURLs = await processSelectedImagesURLs().sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
+			let sortedProcessedImageURLs = await processSelectedImagesURLs().sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedDescending
 			}
 			
 			await MainActor.run {
