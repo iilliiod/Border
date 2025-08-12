@@ -145,14 +145,18 @@ struct NavigationControlsView: View {
 	}
 	
 	func goNext() {
-		if currentImageIndex < viewModel.processedImages.count - 1 {
+		if viewModel.processedImages.isEmpty {
+			if currentImageIndex < viewModel.originalImages.count - 1 {
+				currentImageIndex += 1
+			}
+		} else if currentImageIndex < viewModel.processedImages.count - 1 {
 			currentImageIndex += 1
 		}
 	}
 	var body: some View {
 		// Navigation Controls
 		HStack {
-			if !viewModel.processedImages.isEmpty {
+			if !viewModel.originalImages.isEmpty {
 				Spacer()
 				
 				Button(action: goPrevious) {
@@ -160,12 +164,12 @@ struct NavigationControlsView: View {
 				}
 				.disabled(currentImageIndex == 0)
 				
-				Text("\(currentImageIndex + 1) / \(viewModel.processedImages.count)")
+				Text("\(currentImageIndex + 1) / \(viewModel.processedImages.isEmpty ? viewModel.originalImages.count : viewModel.processedImages.count)")
 				
 				Button(action: goNext) {
 					Image(systemName: "chevron.right")
 				}
-				.disabled(currentImageIndex == viewModel.processedImages.count - 1)
+				.disabled(viewModel.processedImages.isEmpty ? currentImageIndex == viewModel.originalImages.count - 1 : currentImageIndex == viewModel.processedImages.count - 1)
 				
 				Spacer()
 			}
