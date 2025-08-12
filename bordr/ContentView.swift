@@ -9,7 +9,7 @@ import SwiftUI
 import AppKit // For NSImage and NSOpenPanel/NSSavePanel
 
 struct ContentView: View {
-	@StateObject private var viewModel = AppViewModel()
+	let viewModel = AppViewModel()
 	@State private var currentImageIndex: Int = 0
 	
 	// MARK: - Content View Body
@@ -17,23 +17,24 @@ struct ContentView: View {
 		VStack {
 			Spacer()
 			
-			HeaderView(viewModel: viewModel)
+			HeaderView()
 			
 			Spacer()
 			
 			HStack {
-				OriginalImagesView(viewModel: viewModel, currentImageIndex: $currentImageIndex)
+				OriginalImagesView(currentImageIndex: $currentImageIndex)
 					.padding()
 				
-				ProcessedImagesView(viewModel: viewModel, currentImageIndex: $currentImageIndex)
+				ProcessedImagesView(currentImageIndex: $currentImageIndex)
 					.padding()
 				
 			}
 			
-			NavigationControlsView(viewModel: viewModel, currentImageIndex: $currentImageIndex)
+			NavigationControlsView(currentImageIndex: $currentImageIndex)
 				.padding()
 			
 		}
+		.environmentObject(viewModel)
 		.frame(minWidth: 600, minHeight: 400) // Set initial window size
 		.navigationTitle("bordr") // Sets window title in macOS
 	}
@@ -42,7 +43,7 @@ struct ContentView: View {
 
 // MARK: - Header View Body
 struct HeaderView: View {
-	@StateObject var viewModel: AppViewModel
+	@EnvironmentObject var viewModel: AppViewModel
 	
 	var body: some View {
 		HStack {
@@ -78,7 +79,7 @@ struct HeaderView: View {
 
 // MARK: - Original Images View Body
 struct OriginalImagesView: View {
-	@StateObject var viewModel: AppViewModel
+	@EnvironmentObject var viewModel: AppViewModel
 	@Binding var currentImageIndex: Int
 
 	var body: some View {
@@ -106,7 +107,7 @@ struct OriginalImagesView: View {
 
 // MARK: - Processed Images View Body
 struct ProcessedImagesView: View {
-	@StateObject var viewModel: AppViewModel
+	@EnvironmentObject var viewModel: AppViewModel
 	@Binding var currentImageIndex: Int
 	
 	var body: some View {
@@ -134,7 +135,7 @@ struct ProcessedImagesView: View {
 }
 
 struct NavigationControlsView: View {
-	@StateObject var viewModel: AppViewModel
+	@EnvironmentObject var viewModel: AppViewModel
 	@Binding var currentImageIndex: Int
 	
 	func goPrevious() {

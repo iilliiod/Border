@@ -50,18 +50,19 @@ class AppViewModel: ObservableObject {
 	// MARK: selectImage()
 	func selectImage() {
 		let openPanel = NSOpenPanel()
-		openPanel.allowedContentTypes = [.png, .jpeg, .tiff, .heic] // Common image types
+		openPanel.allowedContentTypes = [.png, .jpeg, .tiff] // Common image types
 		openPanel.allowsMultipleSelection = true
 		openPanel.canChooseDirectories = false // todo: add support for directories (operation on all images in directory)
 		openPanel.canChooseFiles = true
 		
 		if openPanel.runModal() == .OK {
-			self.inputImageURLs = openPanel.urls
+			self.inputImageURLs = openPanel.urls.sorted {
+				$0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
+			}
 			self.originalImages = []
-			self.processedImages = []
 			self.errorMessage = nil
-			
-			openPanel.urls.forEach { img in
+
+			self.inputImageURLs.forEach { img in
 				do {
 					let imgData = try Data(contentsOf: img)
 					self.originalImages.append(NSImage(data: imgData))
@@ -70,7 +71,6 @@ class AppViewModel: ObservableObject {
 					self.errorMessage = "Could not load image: \(error.localizedDescription)"
 				}
 			}
-			self.currentImageIndex = 0
 		}
 	}
 	
@@ -89,7 +89,7 @@ class AppViewModel: ObservableObject {
 	func processSelectedImagesAsCollage() {
 		self.isLoading = true
 		self.errorMessage = nil // Clear previous error
-
+ 
 		Task { // Run the async operation in a Task
 			do {
 				let processedFileURL = try await imageMagickProcessor.processCollage(
@@ -123,43 +123,70 @@ class AppViewModel: ObservableObject {
 	}
 
 	
+	// MARK: processSelectedImagesURLs
+	private func processSelectedImagesURLs() async -> [URL] {
+		var processedImageURLs: [URL] = []
+		
+		await withTaskGroup(of: URL?.self) { group in
+			for url in self.inputImageURLs {
+				group.addTask {
+					do {
+						let processedFileURL = try await self.imageMagickProcessor.processImage(
+							inputPath: url,
+							outputPath: self.generateOutputURL(url: url),
+							commandArguments: self.imagemagickArgs
+						)
+						return processedFileURL
+					} catch {
+						// Update UI on the main actor
+						await MainActor.run {
+							
+							print("output url: \(url)")
+							
+							self.errorMessage = "Processing failed: \(error.localizedDescription)"
+							self.isLoading = false
+						}
+					}
+					return nil
+				}
+			}
+			
+			// Use for await to collect the results from all tasks as they complete
+			for await fileURL in group {
+				if let fileURL = fileURL {
+					processedImageURLs.append(fileURL)
+				}
+			}
+		}
+		
+		return processedImageURLs
+	}
+	
 	// MARK: processSelectedImages()
 	func processSelectedImages() {
 		self.isLoading = true
 		self.errorMessage = nil // Clear previous error
-
-		inputImageURLs.forEach { url in
-			Task { // Run the async operation in a Task
-				do {
-					let processedFileURL = try await imageMagickProcessor.processImage(
-						inputPath: url,
-						outputPath: generateOutputURL(url: url),
-						commandArguments: imagemagickArgs
-					)
-					
-					// Update UI on the main actor
-					await MainActor.run {
-						// might be off here
-						if let processedData = try? Data(contentsOf: processedFileURL),
-						   let image = NSImage(data: processedData) {
-							self.processedImages.append(image)
-						} else {
-							self.errorMessage = "Failed to load processed image from disk."
-						}
-						self.isLoading = false
-					}
-				} catch {
-					// Update UI on the main actor
-					await MainActor.run {
-						
-						print("output url: \(url)")
-						
-						self.errorMessage = "Processing failed: \(error.localizedDescription)"
-						self.isLoading = false
+		self.processedImages = [] // Clear previous processed images
+		self.currentImageIndex = 0 // Reset index
+		
+		Task {
+			let sortedProcessedImageURLs = await processSelectedImagesURLs().sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
+			}
+			
+			await MainActor.run {
+				sortedProcessedImageURLs.forEach { img in
+					do {
+						let imgData = try Data(contentsOf: img)
+						self.processedImages.append(NSImage(data: imgData))
+						print("image url: \(img)")
+					} catch {
+						self.errorMessage = "Could not load image: \(error.localizedDescription)"
 					}
 				}
+				self.isLoading = false
 			}
 		}
+		
 	}
 
 	func saveProcessedImage() {
