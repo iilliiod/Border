@@ -15,11 +15,8 @@ struct ContentView: View {
 	// MARK: - Content View Body
 	var body: some View {
 		VStack {
-			Spacer()
-			
 			HeaderView()
-			
-			Spacer()
+				.padding()
 			
 			HStack {
 				OriginalImagesView(currentImageIndex: $currentImageIndex)
@@ -27,7 +24,6 @@ struct ContentView: View {
 				
 				ProcessedImagesView(currentImageIndex: $currentImageIndex)
 					.padding()
-				
 			}
 			
 			NavigationControlsView(currentImageIndex: $currentImageIndex)
@@ -35,8 +31,9 @@ struct ContentView: View {
 			
 		}
 		.environmentObject(viewModel)
-		.frame(minWidth: 600, minHeight: 400) // Set initial window size
+		.frame(minWidth: 600, minHeight: 600) // Set initial window size
 		.navigationTitle("bordr") // Sets window title in macOS
+		.padding()
 	}
 }
 
@@ -46,18 +43,11 @@ struct HeaderView: View {
 	@EnvironmentObject var viewModel: AppViewModel
 	
 	var body: some View {
-		HStack {
-			Button("Select Image") {
+		HStack(spacing: 10) {
+			Button("Select Images") {
 				viewModel.selectImage()
 			}
-			.padding(.horizontal)
 
-			Button("Process Image") {
-				viewModel.processSelectedImages()
-			}
-			.disabled(viewModel.originalImages.isEmpty || viewModel.isLoading)
-			.padding(.horizontal)
-			
 			if !viewModel.originalImages.isEmpty {
 				Button {
 					viewModel.isAppending = true
@@ -70,14 +60,23 @@ struct HeaderView: View {
 					Image(systemName: "plus")
 				}
 				.disabled(viewModel.originalImages.isEmpty || viewModel.isLoading)
-				.padding(.horizontal)
+				
+				Button("Process Image") {
+					viewModel.processSelectedImages()
+				}
+				.disabled(viewModel.originalImages.isEmpty || viewModel.isLoading)
+
+				Button("Collagify") {
+					viewModel.processSelectedImagesAsCollage()
+				}
+				.disabled(viewModel.originalImages.isEmpty)
+				
+				Button("Process for XHS") {
+					viewModel.processSelectedImageForXHS()
+				}
+				.disabled(viewModel.originalImages.isEmpty)
 			}
 
-			Button("Collagify") {
-				viewModel.processSelectedImagesAsCollage()
-			}
-			.disabled(viewModel.originalImages.isEmpty)
-			.padding(.horizontal)
 		}
 		.padding(.bottom)
 		
@@ -99,19 +98,17 @@ struct OriginalImagesView: View {
 
 	var body: some View {
 		VStack {
-			Text("Original Image")
+			Text(viewModel.originalImages.count > 1 ? "Original Images" : "Original Image")
 				.font(.headline)
 			
 			if !viewModel.originalImages.isEmpty {
-				
 				Image(nsImage: viewModel.originalImages[currentImageIndex <= viewModel.originalImages.count - 1 ? currentImageIndex : viewModel.originalImages.count - 1]!)
 					.resizable()
 					.aspectRatio(contentMode: .fit)
-					.frame(maxWidth: 400, maxHeight: 400)
+					.frame(width: 400, height: 400)
 					.border(Color.gray, width: 1)
-					.padding(.horizontal) // Add some padding around the carousel
 			} else {
-				Text("No original image selected")
+				Text("No images selected yet")
 					.frame(width: 400, height: 400)
 					.border(Color.gray, width: 1)
 					.foregroundColor(.secondary)
@@ -127,20 +124,19 @@ struct ProcessedImagesView: View {
 	
 	var body: some View {
 		VStack {
-			Text("Processed Image")
+			Text(viewModel.originalImages.count > 1 ? "Processed Images" : "Processed Image")
 				.font(.headline)
 			
 			if !viewModel.processedImages.isEmpty {
 				Image(nsImage: viewModel.processedImages[min(currentImageIndex, viewModel.processedImages.count - 1)]!)
 					.resizable()
 					.aspectRatio(contentMode: .fit)
-					.frame(maxWidth: 400, maxHeight: 400)
+					.frame(width: 400, height: 400)
 					.border(Color.gray, width: 1)
-					.padding(.horizontal)
 					.id(currentImageIndex)
 
 			} else {
-				Text("No processed image yet")
+				Text("No images processed yet")
 					.frame(width: 400, height: 400)
 					.border(Color.gray, width: 1)
 					.foregroundColor(.secondary)

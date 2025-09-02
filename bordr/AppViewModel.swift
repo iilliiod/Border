@@ -6,7 +6,7 @@
 //
 
 import AppKit // For NSImage
-import SwiftUI // For @Published
+import SwiftUI
 
 class AppViewModel: ObservableObject {
 	@Published var originalImages: [NSImage?] = []
@@ -44,6 +44,33 @@ class AppViewModel: ObservableObject {
 		"-border", "4",
 		"-bordercolor", "black",
 		"-quality", "92"
+	]
+	
+	private let imagemagickXHSArgs: [[String]] = [
+		[
+			"-resize", "'4092x4042'",
+			"-bordercolor", "black",
+			"-border", "4",
+			"-gravity", "west",
+			"-crop", "'50x100%+0+0'",
+			"-resize", "'4092x4042'",
+			"-background", "white",
+			"-gravity", "east",
+			"-extent", "'4096x4096'",
+			"-quality", "92"
+		],
+		[
+			"-resize", "'4092x4042'",
+			"-bordercolor", "black",
+			"-border", "4",
+			"-gravity", "east",
+			"-crop", "'50x100%+0+0'",
+			"-resize", "'4092x4042'",
+			"-background", "white",
+			"-gravity", "west",
+			"-extent", "'4096x4096'",
+			"-quality", "92"
+		],
 	]
 	
 	private let imageMagickProcessor = ImageMagickProcessor()
@@ -86,16 +113,38 @@ class AppViewModel: ObservableObject {
 	}
 	
 	private func generateOutputURL(url: URL) -> URL {
-		var outputURL: URL
-		
-		let outputFileName = "\(url.lastPathComponent.replacingOccurrences(of: ".jpg", with: "_"))_processed.jpg"
-		// let outputURL = FileManager.default.temporaryDirectory.appendingPathComponent(outputFileName)
 		let baseURL = url.deletingLastPathComponent()
-		outputURL = baseURL.appendingPathComponent(outputFileName, conformingTo: .jpeg)
+		let outputFileName = "\(url.lastPathComponent.replacingOccurrences(of: ".jpg", with: "_"))_processed.jpg"
+		return baseURL.appendingPathComponent(outputFileName, conformingTo: .jpeg)
+	}
+	
+	private func generateOutputURLsForXHS(urls: [URL]) -> [URL] {
+		var outputURL: [URL] = []
 		
+		for url in urls {
+			let leftOutputFileName = "\(url.lastPathComponent.replacingOccurrences(of: ".jpg", with: "_l")).jpg"
+			// let outputURL = FileManager.default.temporaryDirectory.appendingPathComponent(outputFileName)
+			let baseURL = url.deletingLastPathComponent()
+			outputURL.append(baseURL.appendingPathComponent(leftOutputFileName, conformingTo: .jpeg))
+			
+			let rightOutputFileName = "\(url.lastPathComponent.replacingOccurrences(of: ".jpg", with: "_r")).jpg"
+			outputURL.append(baseURL.appendingPathComponent(rightOutputFileName, conformingTo: .jpeg))
+		}
+
 		return outputURL
 	}
 	
+	private func generateOutputURLsForCollage(urls: [URL]) -> URL? {
+		guard urls.first?.isFileURL != nil, urls.last?.isFileURL != nil else {
+			return nil
+		}
+		
+		let baseURL = urls.first!.deletingLastPathComponent()
+		let outputFileName = "\(urls.first!.lastPathComponent.replacingOccurrences(of: ".jpg", with: "-").appending("\(urls.last!.lastPathComponent.replacingOccurrences(of: ".jpg", with: "__collage"))")).jpg"
+		
+		return baseURL.appendingPathComponent(outputFileName, conformingTo: .jpeg)
+	}
+
 	// MARK: processSelectedImagesAsCollage()
 	func processSelectedImagesAsCollage() {
 		self.isLoading = true
@@ -105,7 +154,7 @@ class AppViewModel: ObservableObject {
 			do {
 				let processedFileURL = try await imageMagickProcessor.processCollage(
 					inputPaths: inputImageURLs,
-					outputPath: inputImageURLs.first!.deletingLastPathComponent().appendingPathComponent("__collage", conformingTo: .jpeg),
+					outputPath: generateOutputURLsForCollage(urls: inputImageURLs) ?? generateOutputURL(url: inputImageURLs.first!),
 					commandArguments: imagemagickMontageArgs
 				)
 				
@@ -117,6 +166,49 @@ class AppViewModel: ObservableObject {
 						self.processedImages.append(image)
 					} else {
 						self.errorMessage = "Failed to load processed image from disk."
+					}
+					self.isLoading = false
+				}
+			} catch {
+				// Update UI on the main actor
+				await MainActor.run {
+					
+					print("output urls: \(inputImageURLs)")
+					
+					self.errorMessage = "Processing failed: \(error.localizedDescription)"
+					self.isLoading = false
+				}
+			}
+		}
+	}
+	
+	// MARK: processSelectedImageForXHS
+	func processSelectedImageForXHS() {
+		self.isLoading = true
+		self.errorMessage = nil // Clear previous error
+ 
+		Task { // Run the async operation in a Task
+			do {
+				let processedFileURLs = try await imageMagickProcessor.processForXHS(
+					inputPaths: inputImageURLs,
+					outputPaths: generateOutputURLsForXHS(urls: inputImageURLs),
+					commandArguments: imagemagickXHSArgs
+				)
+				
+				// Update UI on the main actor
+				await MainActor.run {
+					// might be off here
+					guard !processedFileURLs.isEmpty else {
+						self.isLoading = false
+						self.errorMessage = "Failed to load processed image from disk."
+						return
+					}
+					
+					processedFileURLs.forEach { url in
+						if let data = try? Data(contentsOf: url),
+						   let image = NSImage(data: data) {
+							self.processedImages.append(image)
+						}
 					}
 					self.isLoading = false
 				}
