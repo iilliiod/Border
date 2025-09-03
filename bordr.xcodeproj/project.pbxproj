@@ -34,6 +34,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				"bordr v1/bordr.app",
+				"bordr v2.1.1/bordr.app",
 				"bordr v2.1/bordr.app",
 				"bordr v2/bordr.app",
 			);

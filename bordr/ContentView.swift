@@ -133,7 +133,8 @@ struct ProcessedImagesView: View {
 					.aspectRatio(contentMode: .fit)
 					.frame(width: 400, height: 400)
 					.border(Color.gray, width: 1)
-					.id(currentImageIndex)
+//					.id(currentImageIndex)
+					.id(viewModel.processedImages)
 
 			} else {
 				Text("No images processed yet")
@@ -173,6 +174,9 @@ struct NavigationControlsView: View {
 				.disabled(currentImageIndex == 0)
 				
 				Text("\(currentImageIndex + 1) / \(viewModel.processedImages.isEmpty ? viewModel.originalImages.count : max(viewModel.originalImages.count, viewModel.processedImages.count))")
+					.onChange(of: viewModel.originalImages) {
+						currentImageIndex = 0
+					}
 				
 				Button(action: goNext) {
 					Image(systemName: "chevron.right")

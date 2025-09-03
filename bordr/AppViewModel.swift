@@ -96,6 +96,11 @@ class AppViewModel: ObservableObject {
 			}
 			
 			self.originalImages = []
+			
+			if self.isAppending == false {
+				self.processedImages = []
+			}
+			
 			self.errorMessage = nil
 
 			self.inputImageURLs.forEach { img in
