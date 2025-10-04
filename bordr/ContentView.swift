@@ -9,13 +9,13 @@ import SwiftUI
 import AppKit // For NSImage and NSOpenPanel/NSSavePanel
 
 struct ContentView: View {
-	let viewModel = AppViewModel()
+	@State private var viewModel = AppViewModel()
 	@State private var currentImageIndex: Int = 0
 	
 	// MARK: - Content View Body
 	var body: some View {
 		VStack {
-			HeaderView()
+			HeaderView(viewModel: viewModel)
 				.padding()
 			
 			HStack {
@@ -30,7 +30,7 @@ struct ContentView: View {
 				.padding()
 			
 		}
-		.environmentObject(viewModel)
+		.environment(viewModel)
 		.frame(minWidth: 600, minHeight: 600) // Set initial window size
 		.navigationTitle("bordr") // Sets window title in macOS
 		.padding()
@@ -40,8 +40,8 @@ struct ContentView: View {
 
 // MARK: - Header View Body
 struct HeaderView: View {
-	@EnvironmentObject var viewModel: AppViewModel
-	
+	@Bindable var viewModel: AppViewModel
+
 	var body: some View {
 		HStack(spacing: 10) {
 			Button("Select Images") {
@@ -61,17 +61,30 @@ struct HeaderView: View {
 				}
 				.disabled(viewModel.originalImages.isEmpty || viewModel.isLoading)
 				
-				Button("Process Image") {
+				Button(viewModel.originalImages.count > 1 ? "Process Images" : "Process Image") {
 					viewModel.processSelectedImages()
 				}
+				.disabled(viewModel.originalImages.isEmpty || viewModel.isLoading)
+				
+				Picker(selection: $viewModel.currentAspectRatio) {
+					ForEach(AspectRatio.allCases) { ratio in
+						Text(ratio.id)
+							.tag(ratio)
+					}
+				} label: {}
+				.pickerStyle(.segmented)
+				.frame(maxWidth: 70)
 				.disabled(viewModel.originalImages.isEmpty || viewModel.isLoading)
 
 				Button("Collagify") {
 					viewModel.processSelectedImagesAsCollage()
 				}
-				.disabled(viewModel.originalImages.isEmpty)
+				.disabled(viewModel.originalImages.count < 2)
 				
 				Button("Process for XHS") {
+					viewModel.currentAspectRatio = AspectRatio.threeFour
+					
+					viewModel.processSelectedImages()
 					viewModel.processSelectedImageForXHS()
 				}
 				.disabled(viewModel.originalImages.isEmpty)
@@ -93,7 +106,7 @@ struct HeaderView: View {
 
 // MARK: - Original Images View Body
 struct OriginalImagesView: View {
-	@EnvironmentObject var viewModel: AppViewModel
+	@Environment(AppViewModel.self) private var viewModel: AppViewModel
 	@Binding var currentImageIndex: Int
 
 	var body: some View {
@@ -119,7 +132,7 @@ struct OriginalImagesView: View {
 
 // MARK: - Processed Images View Body
 struct ProcessedImagesView: View {
-	@EnvironmentObject var viewModel: AppViewModel
+	@Environment(AppViewModel.self) private var viewModel: AppViewModel
 	@Binding var currentImageIndex: Int
 	
 	var body: some View {
@@ -131,7 +144,7 @@ struct ProcessedImagesView: View {
 				Image(nsImage: viewModel.processedImages[min(currentImageIndex, viewModel.processedImages.count - 1)]!)
 					.resizable()
 					.aspectRatio(contentMode: .fit)
-					.frame(width: 400, height: 400)
+					.frame(width: viewModel.currentAspectRatio == AspectRatio.threeFour ? 300 : 400, height: 400)
 					.border(Color.gray, width: 1)
 //					.id(currentImageIndex)
 					.id(viewModel.processedImages)
@@ -147,7 +160,7 @@ struct ProcessedImagesView: View {
 }
 
 struct NavigationControlsView: View {
-	@EnvironmentObject var viewModel: AppViewModel
+	@Environment(AppViewModel.self) private var viewModel: AppViewModel
 	@Binding var currentImageIndex: Int
 	
 	func goPrevious() {

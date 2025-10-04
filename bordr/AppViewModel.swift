@@ -8,14 +8,27 @@
 import AppKit // For NSImage
 import SwiftUI
 
-class AppViewModel: ObservableObject {
-	@Published var originalImages: [NSImage?] = []
-	@Published var processedImages: [NSImage?] = []
-	@Published var isLoading: Bool = false
-	@Published var isAppending: Bool = false
-	@Published var errorMessage: String?
-	@Published var inputImageURLs: [URL] = [] // Keep track of the selected input file URL
-	@Published var currentImageIndex: Int = 0 {
+enum AspectRatio: Identifiable, CaseIterable {
+	case square, threeFour
+	var id: String {
+		switch self {
+			case .square:
+				return "1:1"
+			case .threeFour:
+				return "3:4"
+		}
+	}
+}
+
+@Observable class AppViewModel {
+	var originalImages: [NSImage?] = []
+	var processedImages: [NSImage?] = []
+	var currentAspectRatio: AspectRatio = .square
+	var isLoading: Bool = false
+	var isAppending: Bool = false
+	var errorMessage: String?
+	var inputImageURLs: [URL] = [] // Keep track of the selected input file URL
+	var currentImageIndex: Int = 0 {
 		didSet {
 			// Optional: Ensure index stays within bounds if it's manipulated externally
 			if originalImages.isEmpty {
@@ -27,16 +40,31 @@ class AppViewModel: ObservableObject {
 			}
 		}
 	}
-
-	private let imagemagickArgs: [String] = [
-		"-resize", "'1918x1918>'",
-		"-background", "white",
-		"-bordercolor", "black",
-		"-border", "4",
-		"-gravity", "center",
-		"-extent", "'2048x2048'",
-		"-quality", "92"
-	]
+	
+	private func imageMagickArgs() -> [String] {
+		switch self.currentAspectRatio {
+			case .square:
+				return [
+					"-resize", "'1918x1918>'", // Resize to fit *within* the padded area (2048 - (50*2) - (4*2))
+					"-background", "white",
+					"-bordercolor", "black",
+					"-border", "4",
+					"-gravity", "center",
+					"-extent", "'2048x2048'",
+					"-quality", "92"
+				]
+			case .threeFour:
+				return [
+					"-resize", "'1374x1844>'",
+					"-background", "white",
+					"-bordercolor", "black",
+					"-border", "3",
+					"-gravity", "center",
+					"-extent", "'1440x1920'",
+					"-quality", "92"
+				]
+		}
+	}
 	
 	private let imagemagickMontageArgs: [String] = [
 		"-geometry", "'2048x2048+50+50>'",
@@ -46,32 +74,52 @@ class AppViewModel: ObservableObject {
 		"-quality", "92"
 	]
 	
-	private let imagemagickXHSArgs: [[String]] = [
-		[
-			"-resize", "'4092x4042'",
-			"-bordercolor", "black",
-			"-border", "4",
-			"-gravity", "west",
-			"-crop", "'50x100%+0+0'",
-			"-resize", "'4092x4042'",
-			"-background", "white",
-			"-gravity", "east",
-			"-extent", "'4096x4096'",
-			"-quality", "92"
-		],
-		[
-			"-resize", "'4092x4042'",
-			"-bordercolor", "black",
-			"-border", "4",
-			"-gravity", "east",
-			"-crop", "'50x100%+0+0'",
-			"-resize", "'4092x4042'",
-			"-background", "white",
-			"-gravity", "west",
-			"-extent", "'4096x4096'",
-			"-quality", "92"
-		],
-	]
+	private func imagemagickXHSArgs() -> [[String]] {
+		switch self.currentAspectRatio {
+			case .square:
+				return [
+					[
+						"-resize", "'4092x4042'",
+						"-bordercolor", "black",
+						"-border", "4",
+						"-gravity", "west",
+						"-crop", "'50x100%+0+0'",
+						"-resize", "'4092x4042'",
+						"-background", "white",
+						"-gravity", "east",
+						"-extent", "'4096x4096'",
+						"-quality", "92"
+					],
+					[
+						"-resize", "'4092x4042'",
+						"-bordercolor", "black",
+						"-border", "4",
+						"-gravity", "east",
+						"-crop", "'50x100%+0+0'",
+						"-resize", "'4092x4042'",
+						"-background", "white",
+						"-gravity", "west",
+						"-extent", "'4096x4096'",
+						"-quality", "92"
+					],
+				]
+			case .threeFour:
+				return [
+					[
+						"-gravity", "west",
+						"-crop", "'50x100%+0+0'",
+						"-resize", "'1440x1920'",
+						"-quality", "92"
+					],
+					[
+						"-gravity", "east",
+						"-crop", "'50x100%+0+0'",
+						"-resize", "'1440x1920'",
+						"-quality", "92"
+					],
+				]
+		}
+	}
 	
 	private let imageMagickProcessor = ImageMagickProcessor()
 	
@@ -197,7 +245,7 @@ class AppViewModel: ObservableObject {
 				let processedFileURLs = try await imageMagickProcessor.processForXHS(
 					inputPaths: inputImageURLs,
 					outputPaths: generateOutputURLsForXHS(urls: inputImageURLs),
-					commandArguments: imagemagickXHSArgs
+					commandArguments: imagemagickXHSArgs()
 				)
 				
 				// Update UI on the main actor
@@ -242,7 +290,7 @@ class AppViewModel: ObservableObject {
 						let processedFileURL = try await self.imageMagickProcessor.processImage(
 							inputPath: url,
 							outputPath: self.generateOutputURL(url: url),
-							commandArguments: self.imagemagickArgs
+							commandArguments: self.imageMagickArgs()
 						)
 						return processedFileURL
 					} catch ImageMagickError.fileAlreadyExists {
