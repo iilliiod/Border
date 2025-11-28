@@ -41,6 +41,8 @@ struct ContentView: View {
 // MARK: - Header View Body
 struct HeaderView: View {
 	@Bindable var viewModel: AppViewModel
+	@State private var isMontagePopover: Bool = false
+	@State private var isBordered: Bool = false
 
 	var body: some View {
 		HStack(spacing: 10) {
@@ -77,9 +79,38 @@ struct HeaderView: View {
 				.disabled(viewModel.originalImages.isEmpty || viewModel.isLoading)
 
 				Button("Collagify") {
-					viewModel.processSelectedImagesAsCollage()
+					isMontagePopover.toggle()
 				}
 				.disabled(viewModel.originalImages.count < 2)
+				.sheet(isPresented: $isMontagePopover, content: {
+					VStack(alignment: .leading) {
+						ColorPicker("BG Color", selection: $viewModel.montage.bgColor)
+						
+						Toggle("Individual Image Border", isOn: $isBordered)
+							.toggleStyle(.switch)
+						
+						Spacer()
+						
+						HStack {
+							Button("Cancel", role: .cancel) {
+								isMontagePopover = false
+							}
+							.foregroundStyle(.red)
+							
+							Button("Generate") {
+								isMontagePopover = false
+								viewModel.montage.isBordered = isBordered
+								viewModel.processSelectedImagesAsCollage(montage: viewModel.montage)
+							}
+						}
+						.padding()
+					}
+					.padding()
+				})
+				.onSubmit {
+					print("Submitted.")
+				}
+				
 				
 				Button("Process for XHS") {
 					viewModel.currentAspectRatio = AspectRatio.threeFour

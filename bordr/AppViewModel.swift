@@ -8,6 +8,21 @@
 import AppKit // For NSImage
 import SwiftUI
 
+extension Color {
+	func toHexString() -> String {
+		let uiColor = NSColor(self)
+		var r: CGFloat = 0
+		var g: CGFloat = 0
+		var b: CGFloat = 0
+		var a: CGFloat = 0
+
+		uiColor.getRed(&r, green: &g, blue: &b, alpha: &a)
+
+		let rgb: Int = (Int)(r * 255) << 16 | (Int)(g * 255) << 8 | (Int)(b * 255) << 0
+		return String(format: "#%06x", rgb)
+	}
+}
+
 enum AspectRatio: Identifiable, CaseIterable {
 	case square, threeFour
 	var id: String {
@@ -20,10 +35,49 @@ enum AspectRatio: Identifiable, CaseIterable {
 	}
 }
 
+class Montage {
+	var bgColor: Color = .white
+	var isBordered: Bool = false
+	var montageArgs: [String] {
+		if self.isBordered {
+			return [
+				"-geometry", "'2048x2048+50+50>'",
+				"-background", "'\(self.bgColor.toHexString())'",
+				"-border", "4",
+				"-bordercolor", "'\(self.getBorderColor().toHexString())'",
+				"-quality", "92"
+			]
+		}
+		
+		return [
+			"-geometry", "'2048x2048+50+50>'",
+			"-background", "'\(self.bgColor.toHexString())'",
+			"-quality", "92"
+		]
+	}
+	
+	func getBgColor() -> Color {
+		return Color(self.bgColor)
+	}
+	
+	private func getBorderColor() -> Color {
+		switch self.bgColor {
+			case Color.black:
+				return Color.white
+			case Color.white:
+				return Color.black
+			default:
+				return Color.black
+		}
+	}
+	
+}
+
 @Observable class AppViewModel {
 	var originalImages: [NSImage?] = []
 	var processedImages: [NSImage?] = []
 	var currentAspectRatio: AspectRatio = .square
+	var montage: Montage = Montage()
 	var isLoading: Bool = false
 	var isAppending: Bool = false
 	var errorMessage: String?
@@ -66,13 +120,13 @@ enum AspectRatio: Identifiable, CaseIterable {
 		}
 	}
 	
-	private let imagemagickMontageArgs: [String] = [
-		"-geometry", "'2048x2048+50+50>'",
-		"-background", "white",
-		"-border", "4",
-		"-bordercolor", "black",
-		"-quality", "92"
-	]
+//	private let imagemagickMontageArgs: [String] = [
+//		"-geometry", "'2048x2048+50+50>'",
+//		"-background", "black",
+//		"-border", "4",
+//		"-bordercolor", "white",
+//		"-quality", "92"
+//	]
 	
 	private func imagemagickXHSArgs() -> [[String]] {
 		switch self.currentAspectRatio {
@@ -199,7 +253,7 @@ enum AspectRatio: Identifiable, CaseIterable {
 	}
 
 	// MARK: processSelectedImagesAsCollage()
-	func processSelectedImagesAsCollage() {
+	func processSelectedImagesAsCollage(montage: Montage) {
 		self.isLoading = true
 		self.errorMessage = nil // Clear previous error
  
@@ -208,7 +262,7 @@ enum AspectRatio: Identifiable, CaseIterable {
 				let processedFileURL = try await imageMagickProcessor.processCollage(
 					inputPaths: inputImageURLs,
 					outputPath: generateOutputURLsForCollage(urls: inputImageURLs) ?? generateOutputURL(url: inputImageURLs.first!),
-					commandArguments: imagemagickMontageArgs
+					commandArguments: montage.montageArgs
 				)
 				
 				// Update UI on the main actor
