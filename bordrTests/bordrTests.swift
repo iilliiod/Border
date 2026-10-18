@@ -10,8 +10,14 @@ import Testing
 
 struct bordrTests {
 
-    @Test func example() async throws {
-        // Write your test here and use APIs like `#expect(...)` to check expected conditions.
+    /// Regression: clamping `currentImageIndex` in a `didSet` self-assigned
+    /// through the @Observable setter and recursed until the stack overflowed.
+    @Test func clearingImagesDoesNotRecurse() {
+        let viewModel = AppViewModel()
+        viewModel.clearImages()
+        #expect(viewModel.currentImageIndex == 0)
+        #expect(viewModel.originalImages.isEmpty)
+        #expect(viewModel.processedImages.isEmpty)
+        #expect(viewModel.inputImageURLs.isEmpty)
     }
-
 }

@@ -166,19 +166,10 @@ class AppViewModel {
 	var isLoading: Bool = false
 	var errorMessage: String?
 
-	/// Index shared by both the original and processed previews. Clamped on write.
-	var currentImageIndex: Int = 0 {
-		didSet {
-			let maxIndex = max(originalImages.count, processedImages.count) - 1
-			if maxIndex < 0 {
-				currentImageIndex = 0
-			} else if currentImageIndex > maxIndex {
-				currentImageIndex = maxIndex
-			} else if currentImageIndex < 0 {
-				currentImageIndex = 0
-			}
-		}
-	}
+	/// Index shared by the original and processed previews. Reads are clamped in
+	/// `currentOriginalImage`/`currentProcessedImage` and every writer clamps it;
+	/// a `didSet` clamp here self-assigns and recurses to a stack overflow under @Observable.
+	var currentImageIndex: Int = 0
 
 	private let imageMagickProcessor = ImageMagickProcessor()
 
