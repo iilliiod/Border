@@ -11,10 +11,11 @@ import UniformTypeIdentifiers
 
 struct ContentView: View {
 	@State private var viewModel = AppViewModel()
+	@State private var columnVisibility: NavigationSplitViewVisibility = .all
 	@State private var keyMonitor: Any?
 
 	var body: some View {
-		NavigationSplitView {
+		NavigationSplitView(columnVisibility: $columnVisibility) {
 			ImageSidebar(viewModel: viewModel)
 		} detail: {
 			EditorView(viewModel: viewModel)
@@ -187,12 +188,12 @@ private struct EditorView: View {
 				HSplitView {
 					PreviewPane(
 						title: viewModel.originalTitle,
-						image: viewModel.originalImages[safe: viewModel.currentImageIndex],
+						image: viewModel.currentOriginalImage,
 						emptyMessage: "No images selected yet"
 					)
 					PreviewPane(
 						title: viewModel.processedTitle,
-						image: viewModel.processedImages[safe: viewModel.currentImageIndex],
+						image: viewModel.currentProcessedImage,
 						emptyMessage: "No processed image yet"
 					)
 				}

@@ -191,6 +191,19 @@ class AppViewModel {
 	var originalTitle: String { originalImages.count > 1 ? "Original Images" : "Original Image" }
 	var processedTitle: String { processedImages.count > 1 ? "Processed Images" : "Processed Image" }
 
+	/// The original image currently shown; clamped to the last source when the
+	/// processed list is longer (e.g. a contact sheet added an extra output).
+	var currentOriginalImage: NSImage? {
+		guard !originalImages.isEmpty else { return nil }
+		return originalImages[min(currentImageIndex, originalImages.count - 1)]
+	}
+
+	/// The processed image currently shown, clamped to the last output.
+	var currentProcessedImage: NSImage? {
+		guard !processedImages.isEmpty else { return nil }
+		return processedImages[min(currentImageIndex, processedImages.count - 1)]
+	}
+
 	// MARK: - Loading images
 
 	private func runOpenPanel() -> [URL] {
@@ -444,6 +457,7 @@ class AppViewModel {
 					if let processedData = try? Data(contentsOf: processedFileURL),
 					   let image = NSImage(data: processedData) {
 						processedImages.append(image)
+						currentImageIndex = processedImages.count - 1
 					} else {
 						errorMessage = "Failed to load processed image from disk."
 					}

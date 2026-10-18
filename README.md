@@ -1,76 +1,102 @@
 # Bordr
 
-## Overview
+Bordr is a small macOS app for prepping photography for social media.
+It is a SwiftUI front-end for [ImageMagick](https://imagemagick.org) that
+resizes images, adds a thin border, and places each one on a fixed
+aspect-ratio canvas in a few clicks.
 
-At the moment, `Bordr` is a very simple graphical interface for
-streamlining how I currently share my photography on social media.
+![Bordr with a selected image and its processed result](./img/ui-processed.png)
 
-It's basically a SwiftUI wrapper for ImageMagick commands that resize,
-add borders and create collages of my images in a few clicks.
+## Features
 
-First, select the image(s) you wish to process. After selection, the
-selected images will appear on the left in the `Original Image` or
-`Original Images` image area. The current selection can be viewed using
-the arrow keys that appear below.
+- **Import** one or many images with **Select Images** (`⌘O`), or drag
+  them straight into the window.
+- **Process** every selected image onto a 1:1, 2:3, 3:4, 4:5, or 16:9
+  canvas, centered on white with a thin black border (`⌘↩`).
+- **Contact Sheet** combines two or more images into a single montage
+  with a configurable background colour and optional per-image borders.
+- **Process for Scroll** splits the current image into swipable halves
+  sized to the selected aspect ratio (the "XHS" scroll trick).
+- **Browse** with the on-screen chevrons or the `←` / `→` arrow keys.
+  Navigation wraps around from the last image to the first, and vice
+  versa.
+- **Manage** the selection in the sidebar: drag to reorder, remove with
+  the context menu, and clear everything at once.
+- Output is written automatically next to each source file; there is no
+  separate save step. Closing the window quits the app.
 
-To add images to the current selection, click the plus (`+`) button
-next to `Select Images`. The added images will be placed before the
-previous selection of images in the viewer.
+## Requirements
 
-To resize and place each image in the selection on a square canvas,
-click the `Process Images` button. The processed images will be added
-to the `Processed Image` or `Processed Images` image area upon
-completion.
+- macOS 15.4 or later.
+- ImageMagick installed through Homebrew: `brew install imagemagick`.
+  Bordr looks for `magick` at `/opt/homebrew/bin/magick`,
+  `/usr/local/bin/magick`, then `/usr/bin/magick`.
 
-## Version History
+## Usage
 
-### Version 2.2
+1. Click **Select Images**, or drag photos into the window.
+2. Pick an aspect ratio from the toolbar.
+3. Click **Process** to place every selected image on that canvas.
+4. Optionally open **Contact Sheet** to build a montage, or **Process for
+   Scroll** to split the current image into halves.
+5. Navigate the results with the chevrons or the `←` / `→` arrow keys.
 
-Version 2.2 includes improvements to the overall look of the UI as well
-as some known bug fixes and quality of life improvements.
+Processed files are saved beside their originals using these suffixes:
 
-#### What's New
+| Action | Output file |
+| --- | --- |
+| Process | `<name>_processed.jpg` |
+| Contact Sheet | `<first>-<last>__collage.jpg` |
+| Process for Scroll | `<name>_1.jpg`, `<name>_2.jpg`, … |
 
-##### `Process for XHS`
-
-New in Version 2.2 is the ability to process individual images as
-cropped halves using the `Process for XHS` button.
-
-This effectively halves an image, resizes each half then places those
-halves on separate 4096x4096 canvases in order to
-'maximize the viewing quality' of the image on social media.
-
-To be honest, I just thought the seamless transition when swiping
-between images was cool. In the end, that's what this button comes down
-to.
-
-##### Other Changes
-
-The UI is somewhat cleaner and less 'buggy' now with changes being made
-to the appearance and components of the UI.
-
-#### UI
+## Screenshots
 
 On launch
 
-![](./img/3.png)
+![Bordr on launch](./img/ui-launch.png)
 
-Post `Select Images`
+After selecting images
 
-![](./img/4.png)
+![Bordr with images selected](./img/ui-selected.png)
 
-Post `Process Image`
+After processing (1:1 canvas)
 
-![](./img/5.png)
+![Bordr after processing](./img/ui-processed.png)
 
-![](./img/6.png)
+After building a contact sheet
 
-![](./img/7.png)
+![Bordr after a contact sheet](./img/ui-collage.png)
 
-Post `Collagify`
+## Version History
 
-![](./img/8.png)
+### Version 2.4
 
-Post `Process for XHS`
+A full UI pass and quality-of-life update.
 
-![](./img/9.png)
+#### What's New
+
+- New sidebar + editor layout built on `NavigationSplitView`, with a
+  thumbnail list, drag-and-drop import, and inline actions.
+- A real toolbar for Select, Process, Contact Sheet, Process for Scroll,
+  and the aspect-ratio picker.
+- Responsive before/after previews that scale with the window instead of
+  fixed-size frames.
+- Arrow-key navigation (`←` / `→`) with wrap-around, plus working
+  chevrons.
+- Sidebar support for removing, reordering, and clearing images.
+- Closing the window now quits the app.
+
+#### Fixes
+
+- Processed filenames are now derived correctly for PNG and TIFF inputs.
+- Changing the aspect ratio and processing again re-renders instead of
+  reusing a stale cached output.
+- Scroll output paths containing spaces are quoted correctly.
+- Removed duplicated ImageMagick path lookups and console debug logging.
+
+### Version 2.2
+
+Version 2.2 added **Process for XHS** (now labelled *Process for
+Scroll*), which halves an image, resizes each half, and places them on
+separate canvases so they read as one continuous image when swiping
+between posts. It also cleaned up the previous UI.
