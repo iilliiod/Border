@@ -30,13 +30,14 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		15FDB47D2E4B302900F58DA3 /* Exceptions for "bordr" folder in "bordr" target */ = {
+		15E8F73A2F9FBE6900F69FAD /* Exceptions for "bordr" folder in "bordr" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				"bordr v1/bordr.app",
 				"bordr v2.1.1/bordr.app",
-				"bordr v2.1/bordr.app",
 				"bordr v2.2/bordr.app",
+				"bordr v2.3.1/bordr.app",
+				"bordr v2.3/bordr.app",
 				"bordr v2/bordr.app",
 			);
 			target = 15FE75642E2E25DB0079A5F9 /* bordr */;
@@ -47,7 +48,7 @@
 		15FE75672E2E25DB0079A5F9 /* bordr */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				15FDB47D2E4B302900F58DA3 /* Exceptions for "bordr" folder in "bordr" target */,
+				15E8F73A2F9FBE6900F69FAD /* Exceptions for "bordr" folder in "bordr" target */,
 			);
 			path = bordr;
 			sourceTree = "<group>";
@@ -188,7 +189,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1630;
-				LastUpgradeCheck = 1640;
+				LastUpgradeCheck = 2610;
 				TargetAttributes = {
 					15FE75642E2E25DB0079A5F9 = {
 						CreatedOnToolsVersion = 16.3;
@@ -346,6 +347,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -404,6 +406,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 			};
 			name = Release;
@@ -430,7 +433,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2.1.1;
+				MARKETING_VERSION = 2.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.badvcr.bordr;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -461,7 +464,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2.1.1;
+				MARKETING_VERSION = 2.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.badvcr.bordr;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;

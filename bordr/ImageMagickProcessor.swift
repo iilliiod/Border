@@ -6,255 +6,122 @@
 //
 
 import Foundation
-import AppKit // Not strictly needed for the processor itself, but for NSImage if you return it directly
 
+/// Thin, async wrapper around the ImageMagick CLI (`magick` / `magick montage`).
 class ImageMagickProcessor {
-	
-	// MARK: processImage()
-	/// Processes an image using an ImageMagick CLI command.
-	/// - Parameters:
-	///   - inputPath: The full path to the input image file.
-	///   - outputPath: The full path where the processed image will be saved.
-	///   - commandArguments: An array of strings representing the ImageMagick command arguments
-	///                       (e.g., ["-resize", "1820x1820>", "-background", "white", ...])
-	/// - Throws: `ImageMagickError` if the process fails.
+
+	// MARK: - Executable discovery
+
+	/// Locates the `magick` executable, preferring Homebrew's Apple-silicon path.
+	private func magickPath() throws -> String {
+		let candidates = [
+			"/opt/homebrew/bin/magick",
+			"/usr/local/bin/magick",
+			"/usr/bin/magick"
+		]
+		for path in candidates where FileManager.default.fileExists(atPath: path) {
+			return path
+		}
+		throw ImageMagickError.executableNotFound
+	}
+
+	/// Runs a prepared `Process` and bridges its termination into `async`.
+	private func run(_ process: Process) async throws {
+		let pipe = Pipe()
+		process.standardOutput = pipe
+		process.standardError = pipe
+
+		try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+			process.terminationHandler = { currentProcess in
+				let data = pipe.fileHandleForReading.readDataToEndOfFile()
+				let output = String(data: data, encoding: .utf8) ?? ""
+
+				if currentProcess.terminationStatus == 0 {
+					continuation.resume()
+				} else {
+					continuation.resume(
+						throwing: ImageMagickError.commandFailed(
+							statusCode: currentProcess.terminationStatus,
+							message: output
+						)
+					)
+				}
+			}
+
+			do {
+				try process.run()
+			} catch {
+				continuation.resume(throwing: error)
+			}
+		}
+	}
+
+	private func makeShellProcess(command: String) -> Process {
+		let process = Process()
+		process.executableURL = URL(fileURLWithPath: "/bin/bash")
+		process.arguments = ["-c", command]
+		return process
+	}
+
+	// MARK: - processImage()
+
+	/// Processes a single image using an ImageMagick CLI command.
 	/// - Returns: The URL of the successfully processed output image.
 	func processImage(inputPath: URL, outputPath: URL, commandArguments: [String]) async throws -> URL {
-		
-		// Check if the output fle exists
-		guard !FileManager.default.fileExists(atPath: outputPath.path) else {
-			throw ImageMagickError.fileAlreadyExists(outputPath)
-		}
-		
-		// Ensure the input file exists
 		guard FileManager.default.fileExists(atPath: inputPath.path) else {
 			throw ImageMagickError.fileNotFound(inputPath)
 		}
-		
-		let process = Process()
-		process.executableURL = URL(fileURLWithPath: "/bin/bash") // or "/bin/zsh"
-		
-		// Determine the actual magick path. Prioritize discovered, then common Homebrew paths.
-		let actualMagickPath: String
-		
-		if FileManager.default.fileExists(atPath: "/opt/homebrew/bin/magick") {
-			actualMagickPath = "/opt/homebrew/bin/magick"
-		} else if FileManager.default.fileExists(atPath: "/usr/local/bin/magick") {
-			actualMagickPath = "/usr/local/bin/magick"
-		} else {
-			throw ImageMagickError.executableNotFound // Cannot find magick executable at all
-		}
-		
-		// Construct the full ImageMagick command string, ensuring paths with spaces are quoted
-		var commandParts: [String] = []
-		commandParts.append(actualMagickPath.shellEscaped()) // Use shellEscaped for the executable itself
-		commandParts.append(inputPath.path.shellEscaped()) // Input path must be escaped
-		
-		// Add existing arguments. Assume they are already properly formatted/quoted if needed
-		commandParts.append(contentsOf: commandArguments)
-		
-		commandParts.append(outputPath.path.shellEscaped()) // Output path must be escaped
-		
-		let fullCommandString = commandParts.joined(separator: " ")
-		
-		// Pass the command string as an argument to the shell with -c ---
-		process.arguments = ["-c", fullCommandString]
-		
-		// --- DEBUG PRINT: Log the full command executed by the shell ---
-		print("DEBUG: Executing with shell: \(process.executableURL!.path) -c \"\(fullCommandString)\"")
-		
-		let pipe = Pipe()
-		process.standardOutput = pipe
-		process.standardError = pipe // Capture both stdout and stderr for debugging
 
-		return try await withCheckedThrowingContinuation { continuation in
-			process.terminationHandler = { currentProcess in
-				let data = pipe.fileHandleForReading.readDataToEndOfFile()
-				let output = String(data: data, encoding: .utf8)
+		var parts = [try magickPath().shellEscaped(), inputPath.path.shellEscaped()]
+		parts.append(contentsOf: commandArguments)
+		parts.append(outputPath.path.shellEscaped())
 
-				if currentProcess.terminationStatus == 0 {
-					// Success!
-					print("DEBUG: ImageMagick command succeeded.")
-					continuation.resume(returning: outputPath)
-				} else {
-					// Command failed
-					let errorMessage = output ?? "Unknown error"
-					
-					// --- DEBUG PRINT: Log the full error output from ImageMagick ---
-										print("DEBUG: ImageMagick command failed with status \(currentProcess.terminationStatus). Output:\n\(errorMessage)")
-					
-					continuation.resume(throwing: ImageMagickError.commandFailed(statusCode: currentProcess.terminationStatus, message: errorMessage))
-				}
-			}
-
-			do {
-				try process.run()
-			} catch {
-				print("DEBUG: Error running Process: \(error.localizedDescription)")
-				continuation.resume(throwing: error)
-			}
-		}
+		try await run(makeShellProcess(command: parts.joined(separator: " ")))
+		return outputPath
 	}
-	
-	// MARK: processCollage()
+
+	// MARK: - processCollage()
+
+	/// Builds a montage/contact sheet from multiple input images.
 	func processCollage(inputPaths: [URL], outputPath: URL, commandArguments: [String]) async throws -> URL {
-		// Ensure the input file exists
 		try inputPaths.forEach { inputPath in
 			guard FileManager.default.fileExists(atPath: inputPath.path) else {
 				throw ImageMagickError.fileNotFound(inputPath)
 			}
 		}
-		
-		let process = Process()
-		process.executableURL = URL(fileURLWithPath: "/bin/bash") // or "/bin/zsh"
-		
-		// Determine the actual magick path. Prioritize discovered, then common Homebrew paths.
-		let actualMagickPath: String
-		
-		if FileManager.default.fileExists(atPath: "/opt/homebrew/bin/magick") {
-			actualMagickPath = "/opt/homebrew/bin/magick"
-		} else if FileManager.default.fileExists(atPath: "/usr/local/bin/magick") {
-			actualMagickPath = "/usr/local/bin/magick"
-		} else {
-			throw ImageMagickError.executableNotFound // Cannot find magick executable at all
-		}
-		
-		// Construct the full ImageMagick command string, ensuring paths with spaces are quoted
-		var commandParts: [String] = []
-		commandParts.append(actualMagickPath.shellEscaped()) // Use shellEscaped for the executable itself
-		commandParts.append("montage")
-		
-		inputPaths.forEach { inputPath in
-			commandParts.append(inputPath.path.shellEscaped())
-		}
-		
-		// Add existing arguments. Assume they are already properly formatted/quoted if needed
-		commandParts.append(contentsOf: commandArguments)
-		
-		commandParts.append(outputPath.path.shellEscaped()) // Output path must be escaped
-		
-		let fullCommandString = commandParts.joined(separator: " ")
-		
-		// Pass the command string as an argument to the shell with -c ---
-		process.arguments = ["-c", fullCommandString]
-		
-		// --- DEBUG PRINT: Log the full command executed by the shell ---
-		print("DEBUG: Executing with shell: \(process.executableURL!.path) -c \"\(fullCommandString)\"")
-		
-		let pipe = Pipe()
-		process.standardOutput = pipe
-		process.standardError = pipe // Capture both stdout and stderr for debugging
 
-		return try await withCheckedThrowingContinuation { continuation in
-			process.terminationHandler = { currentProcess in
-				let data = pipe.fileHandleForReading.readDataToEndOfFile()
-				let output = String(data: data, encoding: .utf8)
+		var parts = [try magickPath().shellEscaped(), "montage"]
+		parts.append(contentsOf: inputPaths.map { $0.path.shellEscaped() })
+		parts.append(contentsOf: commandArguments)
+		parts.append(outputPath.path.shellEscaped())
 
-				if currentProcess.terminationStatus == 0 {
-					// Success!
-					print("DEBUG: ImageMagick command succeeded.")
-					continuation.resume(returning: outputPath)
-				} else {
-					// Command failed
-					let errorMessage = output ?? "Unknown error"
-					
-					// --- DEBUG PRINT: Log the full error output from ImageMagick ---
-										print("DEBUG: ImageMagick command failed with status \(currentProcess.terminationStatus). Output:\n\(errorMessage)")
-					
-					continuation.resume(throwing: ImageMagickError.commandFailed(statusCode: currentProcess.terminationStatus, message: errorMessage))
-				}
-			}
-
-			do {
-				try process.run()
-			} catch {
-				print("DEBUG: Error running Process: \(error.localizedDescription)")
-				continuation.resume(throwing: error)
-			}
-		}
-
+		try await run(makeShellProcess(command: parts.joined(separator: " ")))
+		return outputPath
 	}
-	
-	// MARK: processForXHS()
-	func processForXHS(inputPaths: [URL], outputPaths: [URL], commandArguments: [[String]]) async throws -> [URL] {
-		// Ensure the input file exists
-		try inputPaths.forEach { inputPath in
-			guard FileManager.default.fileExists(atPath: inputPath.path) else {
-				throw ImageMagickError.fileNotFound(inputPath)
-			}
+
+	// MARK: - process4Scroll()
+
+	/// Slices a single image into several output files in one shell invocation.
+	///
+	/// Each entry in `commandArguments` describes one slice (without its output
+	/// path); the matching entry in `outputPaths` receives the result.
+	func process4Scroll(inputPath: URL, outputPaths: [URL], commandArguments: [[String]]) async throws -> [URL] {
+		guard FileManager.default.fileExists(atPath: inputPath.path) else {
+			throw ImageMagickError.fileNotFound(inputPath)
+		}
+		guard commandArguments.count == outputPaths.count, !outputPaths.isEmpty else {
+			throw ImageMagickError.commandFailed(statusCode: -1, message: "Mismatched scroll arguments and outputs.")
 		}
 
-		var indx: Int = 0
-		for inputPath in inputPaths {
-			let process = Process()
-			process.executableURL = URL(fileURLWithPath: "/bin/bash") // or "/bin/zsh"
-			
-			// actual magick path. Prioritize discovered, then common Homebrew paths.
-			let actualMagickPath: String
-			
-			if FileManager.default.fileExists(atPath: "/opt/homebrew/bin/magick") {
-				actualMagickPath = "/opt/homebrew/bin/magick"
-			} else if FileManager.default.fileExists(atPath: "/usr/local/bin/magick") {
-				actualMagickPath = "/usr/local/bin/magick"
-			} else {
-				throw ImageMagickError.executableNotFound // Cannot find magick executable at all
-			}
-			
-			// Construct the full ImageMagick command string, ensuring paths with spaces are quoted
-			var commandParts: [String] = []
-			commandParts.append(actualMagickPath.shellEscaped()) // Use shellEscaped for the executable itself
-			commandParts.append(inputPath.path.shellEscaped())
-			
-			commandParts.append(contentsOf: commandArguments[0])
-			commandParts.append(outputPaths[indx].path.shellEscaped())
-			commandParts.append("&&")
-			commandParts.append(actualMagickPath.shellEscaped())
-			commandParts.append(inputPath.path.shellEscaped())
-			commandParts.append(contentsOf: commandArguments[1])
-			commandParts.append(outputPaths[indx+1].path.shellEscaped())
-			indx += 2
-			
-			let fullCommandString = commandParts.joined(separator: " ")
-			
-			// Pass the command string as an argument to the shell with -c ---
-			process.arguments = ["-c", fullCommandString]
-			
-			// --- DEBUG PRINT: Log the full command executed by the shell ---
-			print("DEBUG: Executing with shell: \(process.executableURL!.path) -c \"\(fullCommandString)\"")
-			
-			let pipe = Pipe()
-			process.standardOutput = pipe
-			process.standardError = pipe // Capture both stdout and stderr for debugging
-			
-			let _ = try await withCheckedThrowingContinuation { continuation in
-				process.terminationHandler = { currentProcess in
-					let data = pipe.fileHandleForReading.readDataToEndOfFile()
-					let output = String(data: data, encoding: .utf8)
-					
-					if currentProcess.terminationStatus == 0 {
-						// Success!
-						print("DEBUG: ImageMagick command succeeded.")
-						continuation.resume(returning: outputPaths)
-					} else {
-						// Command failed
-						let errorMessage = output ?? "Unknown error"
-						
-						// --- DEBUG PRINT: Log the full error output from ImageMagick ---
-						print("DEBUG: ImageMagick command failed with status \(currentProcess.terminationStatus). Output:\n\(errorMessage)")
-						
-						continuation.resume(throwing: ImageMagickError.commandFailed(statusCode: currentProcess.terminationStatus, message: errorMessage))
-					}
-				}
-				
-				do {
-					try process.run()
-				} catch {
-					print("DEBUG: Error running Process: \(error.localizedDescription)")
-					continuation.resume(throwing: error)
-				}
-			}
+		let magick = try magickPath().shellEscaped()
+		let commands: [String] = zip(commandArguments, outputPaths).map { args, output in
+			var parts = [magick, inputPath.path.shellEscaped()]
+			parts.append(contentsOf: args)
+			parts.append(output.path.shellEscaped())
+			return parts.joined(separator: " ")
 		}
-		
+
+		try await run(makeShellProcess(command: commands.joined(separator: " && ")))
 		return outputPaths
 	}
 }
@@ -263,27 +130,28 @@ enum ImageMagickError: Error, LocalizedError {
 	case fileNotFound(URL)
 	case fileAlreadyExists(URL)
 	case commandFailed(statusCode: Int32, message: String)
-	case executableNotFound // If magick can't be found at common paths
+	case executableNotFound
 
 	var errorDescription: String? {
 		switch self {
 			case .fileNotFound(let url): return "Input file not found: \(url.lastPathComponent)"
 			case .fileAlreadyExists(let url): return "Output file already exists: \(url.lastPathComponent)"
-			case .commandFailed(let statusCode, let message): return "ImageMagick command failed with status \(statusCode): \(message)"
-			case .executableNotFound: return "ImageMagick executable 'magick' not found. Please ensure it's installed (e.g., via Homebrew in /usr/local/bin/magick or /opt/homebrew/bin/magick)."
+			case .commandFailed(let statusCode, let message):
+				let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+				return "ImageMagick failed (\(statusCode)): \(trimmed.isEmpty ? "unknown error" : trimmed)"
+			case .executableNotFound:
+				return "ImageMagick 'magick' not found. Install it via Homebrew (e.g. /opt/homebrew/bin/magick)."
 		}
 	}
 }
 
-// --- Helper Extension for Shell Escaping ---
+// MARK: - Shell escaping helper
+
 extension String {
 	func shellEscaped() -> String {
-		// If the string contains no special characters, return it as is.
-		// This is a simplified check; a more robust one might be needed for very complex strings.
 		guard self.rangeOfCharacter(from: CharacterSet(charactersIn: " \"'\\$!*?[]{}<>()`~#&|;")) != nil else {
 			return self
 		}
-		// Enclose in single quotes and escape any single quotes within.
 		return "'" + self.replacingOccurrences(of: "'", with: "'\\''") + "'"
 	}
 }
