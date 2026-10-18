@@ -1,0 +1,22 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+
+# Xcode build products and caches
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcresult
+*.profraw
+*.dSYM
+*.moved-aside
+
+# Built application bundles and archived versions
+*.app
+bordr/bordr v*/
+
+# Local-only
+.private-journal/
