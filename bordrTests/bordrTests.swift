@@ -12,6 +12,7 @@ struct bordrTests {
 
     /// Regression: clamping `currentImageIndex` in a `didSet` self-assigned
     /// through the @Observable setter and recursed until the stack overflowed.
+    @MainActor
     @Test func clearingImagesDoesNotRecurse() {
         let viewModel = AppViewModel()
         viewModel.clearImages()

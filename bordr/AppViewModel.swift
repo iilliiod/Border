@@ -65,16 +65,6 @@ enum AspectRatio: Identifiable, CaseIterable {
 		}
 	}
 
-	var landVal: Double {
-		switch self {
-			case .square: return 1.0
-			case .twoThree: return 2.0/3.0
-			case .threeFour: return 3.0/4.0
-			case .fourFive: return 4.0/5.0
-			case .sixteenNine: return 9.0/16.0
-		}
-	}
-
 	var portVal: Double {
 		switch self {
 			case .square: return 1.0
@@ -114,10 +104,6 @@ enum AspectRatio: Identifiable, CaseIterable {
 		}
 	}
 
-	func invertDimensions(dimensions: (Int, Int)) -> (Int, Int) {
-		return (dimensions.1, dimensions.0)
-	}
-
 	func resolution2String(dimensions: (Int, Int)) -> String {
 		return "\(dimensions.0)x\(dimensions.1)"
 	}
@@ -130,32 +116,27 @@ struct Montage {
 	var isBordered: Bool = false
 
 	var montageArgs: [String] {
-		if isBordered {
-			return [
-				"-geometry", "'2048x2048+50+50>'",
-				"-background", "'\(bgColor.toHexString())'",
-				"-border", "4",
-				"-bordercolor", "'\(borderColor.toHexString())'",
-				"-quality", "92"
-			]
-		}
-
-		return [
-			"-geometry", "'2048x2048+50+50>'",
-			"-background", "'\(bgColor.toHexString())'",
-			"-quality", "92"
+		var args = [
+			"-geometry", "2048x2048+50+50>",
+			"-background", bgColor.toHexString()
 		]
+		if isBordered {
+			args += ["-border", "4", "-bordercolor", borderColor.toHexString()]
+		}
+		args += ["-quality", "92"]
+		return args
 	}
 
+	/// Compare by hex instead of `Color` equality, which is unstable across color spaces.
 	private var borderColor: Color {
-		switch bgColor {
-			case Color.black: return Color.white
-			case Color.white: return Color.black
-			default: return Color.black
+		switch bgColor.toHexString().lowercased() {
+			case "#000000": return .white
+			default: return .black
 		}
 	}
 }
 
+@MainActor
 @Observable
 class AppViewModel {
 	var originalImages: [NSImage] = []
@@ -172,11 +153,12 @@ class AppViewModel {
 	var currentImageIndex: Int = 0
 
 	private let imageMagickProcessor = ImageMagickProcessor()
+	/// Invalidates in-flight processing when the selection changes or is cleared.
+	private var processGeneration = 0
 
 	// MARK: - Derived state
 
 	var hasImages: Bool { !originalImages.isEmpty }
-	var hasProcessedImages: Bool { !processedImages.isEmpty }
 	var imageCount: Int { max(originalImages.count, processedImages.count) }
 
 	var originalTitle: String { originalImages.count > 1 ? "Original Images" : "Original Image" }
@@ -227,6 +209,8 @@ class AppViewModel {
 	}
 
 	private func load(urls: [URL], replacing: Bool) {
+		processGeneration += 1
+		isLoading = false
 		errorMessage = nil
 
 		var merged = replacing ? urls : inputImageURLs + urls
@@ -281,6 +265,8 @@ class AppViewModel {
 	}
 
 	func clearImages() {
+		processGeneration += 1
+		isLoading = false
 		originalImages = []
 		processedImages = []
 		inputImageURLs = []
@@ -329,12 +315,12 @@ class AppViewModel {
 
 	private func processSelectedImagesArgs() -> [String] {
 		return [
-			"-resize", "'\(currentAspectRatio.resolution2String(dimensions: currentAspectRatio.getBorderedResolution()))>'",
+			"-resize", "\(currentAspectRatio.resolution2String(dimensions: currentAspectRatio.getBorderedResolution()))>",
 			"-background", "white",
 			"-bordercolor", "black",
 			"-border", currentAspectRatio == AspectRatio.square ? "4" : "3",
 			"-gravity", "center",
-			"-extent", "'\(currentAspectRatio.resolution2String(dimensions: currentAspectRatio.dimensions))'",
+			"-extent", currentAspectRatio.resolution2String(dimensions: currentAspectRatio.dimensions),
 			"-quality", "92"
 		]
 	}
@@ -345,29 +331,22 @@ class AppViewModel {
 		return Int(splits.rounded(.toNearestOrAwayFromZero))
 	}
 
-	private func imagemagickScrollArgs(image: URL) -> [[String]] {
-		guard let dimensions = getImageDimensions(url: image) else { return [] }
-		let splits = calculateImageSplits(imageDimensions: dimensions)
-		guard splits >= 1 else { return [] }
-
+	private func imagemagickScrollArgs(dimensions: CGSize, splits: Int) -> [[String]] {
 		let width = Int(dimensions.width) / splits
 		let resize = currentAspectRatio.resolution2String(dimensions: currentAspectRatio.dimensions)
 
 		return (0..<splits).map { i in
 			[
 				"-gravity", "west",
-				"-crop", "'\(width)x\(Int(dimensions.height))>+\(width * i)+0'",
-				"-resize", "'\(resize)'",
+				"-crop", "\(width)x\(Int(dimensions.height))>+\(width * i)+0",
+				"-resize", resize,
 				"-quality", "92"
 			]
 		}
 	}
 
-	private func scrollOutputURLs(image: URL) -> [URL] {
-		guard let dimensions = getImageDimensions(url: image) else { return [] }
-		let splits = calculateImageSplits(imageDimensions: dimensions)
-		guard splits >= 1 else { return [] }
-		return (1...splits).map { generateOutputURLs4Scroll(url: image, indx: $0) }
+	private func scrollOutputURLs(image: URL, splits: Int) -> [URL] {
+		(1...splits).map { generateOutputURLs4Scroll(url: image, indx: $0) }
 	}
 
 	// MARK: - Processing
@@ -376,90 +355,78 @@ class AppViewModel {
 	func processSelectedImages() {
 		guard !inputImageURLs.isEmpty else { return }
 
+		processGeneration += 1
+		let generation = processGeneration
+		let jobs = inputImageURLs.map { (input: $0, output: generateOutputURL(url: $0), args: processSelectedImagesArgs()) }
+		let processor = imageMagickProcessor
+
 		isLoading = true
 		errorMessage = nil
 		processedImages = []
 		currentImageIndex = 0
 
 		Task {
-			let urls = await processSelectedImagesURLs().sorted {
-				$0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
-			}
-
-			await MainActor.run {
-				for url in urls {
-					if let data = try? Data(contentsOf: url), let image = NSImage(data: data) {
-						processedImages.append(image)
-					} else {
-						errorMessage = "Could not load processed image: \(url.lastPathComponent)"
-					}
-				}
-				isLoading = false
-			}
-		}
-	}
-
-	private func processSelectedImagesURLs() async -> [URL] {
-		await withTaskGroup(of: URL?.self) { group in
-			for url in inputImageURLs {
-				group.addTask {
-					do {
-						return try await self.imageMagickProcessor.processImage(
-							inputPath: url,
-							outputPath: self.generateOutputURL(url: url),
-							commandArguments: self.processSelectedImagesArgs()
-						)
-					} catch {
-						await MainActor.run {
-							self.errorMessage = "Processing failed: \(error.localizedDescription)"
-						}
-						return nil
-					}
+			var urls: [URL] = []
+			for job in jobs {
+				guard generation == processGeneration else { return }
+				do {
+					urls.append(try await processor.processImage(
+						inputPath: job.input,
+						outputPath: job.output,
+						commandArguments: job.args
+					))
+				} catch {
+					errorMessage = "Processing failed: \(error.localizedDescription)"
 				}
 			}
 
-			var processedImageURLs: [URL] = []
-			for await fileURL in group {
-				if let fileURL { processedImageURLs.append(fileURL) }
+			guard generation == processGeneration else { return }
+			urls.sort { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+			for url in urls {
+				if let data = try? Data(contentsOf: url), let image = NSImage(data: data) {
+					processedImages.append(image)
+				} else {
+					errorMessage = "Could not load processed image: \(url.lastPathComponent)"
+				}
 			}
-			return processedImageURLs
+			isLoading = false
 		}
 	}
 
 	/// Builds a single contact sheet from all selected images.
 	func processSelectedImagesAsCollage(montage: Montage) {
-		guard !inputImageURLs.isEmpty else { return }
+		guard let first = inputImageURLs.first else { return }
+
+		processGeneration += 1
+		let generation = processGeneration
+		let inputs = inputImageURLs
+		let outputURL = generateOutputURLsForCollage(urls: inputs) ?? generateOutputURL(url: first)
+		let args = montage.montageArgs
+		let processor = imageMagickProcessor
 
 		isLoading = true
 		errorMessage = nil
 
-		let outputURL = generateOutputURLsForCollage(urls: inputImageURLs)
-			?? generateOutputURL(url: inputImageURLs.first!)
-
 		Task {
 			do {
-				let processedFileURL = try await imageMagickProcessor.processCollage(
-					inputPaths: inputImageURLs,
+				let url = try await processor.processCollage(
+					inputPaths: inputs,
 					outputPath: outputURL,
-					commandArguments: montage.montageArgs
+					commandArguments: args
 				)
-
-				await MainActor.run {
-					if let processedData = try? Data(contentsOf: processedFileURL),
-					   let image = NSImage(data: processedData) {
-						processedImages.append(image)
-						currentImageIndex = processedImages.count - 1
-					} else {
-						errorMessage = "Failed to load processed image from disk."
-					}
-					isLoading = false
+				guard generation == processGeneration else { return }
+				if let data = try? Data(contentsOf: url), let image = NSImage(data: data) {
+					processedImages.append(image)
+					currentImageIndex = processedImages.count - 1
+				} else {
+					errorMessage = "Failed to load processed image from disk."
 				}
 			} catch {
-				await MainActor.run {
-					errorMessage = "Processing failed: \(error.localizedDescription)"
-					isLoading = false
-				}
+				guard generation == processGeneration else { return }
+				errorMessage = "Processing failed: \(error.localizedDescription)"
 			}
+			guard generation == processGeneration else { return }
+			isLoading = false
 		}
 	}
 
@@ -469,40 +436,45 @@ class AppViewModel {
 			errorMessage = "Select an image first."
 			return
 		}
-
-		let arguments = imagemagickScrollArgs(image: image)
-		let outputs = scrollOutputURLs(image: image)
-		guard !arguments.isEmpty, arguments.count == outputs.count else {
+		guard let dimensions = getImageDimensions(url: image) else {
+			errorMessage = "Could not read image dimensions."
+			return
+		}
+		let splits = calculateImageSplits(imageDimensions: dimensions)
+		guard splits >= 1 else {
 			errorMessage = "Could not determine how to split this image."
 			return
 		}
+
+		processGeneration += 1
+		let generation = processGeneration
+		let arguments = imagemagickScrollArgs(dimensions: dimensions, splits: splits)
+		let outputs = scrollOutputURLs(image: image, splits: splits)
+		let processor = imageMagickProcessor
 
 		isLoading = true
 		errorMessage = nil
 
 		Task {
 			do {
-				let urls = try await imageMagickProcessor.process4Scroll(
+				let urls = try await processor.process4Scroll(
 					inputPath: image,
 					outputPaths: outputs,
 					commandArguments: arguments
 				)
-
-				await MainActor.run {
-					processedImages = []
-					for url in urls {
-						if let data = try? Data(contentsOf: url), let img = NSImage(data: data) {
-							processedImages.append(img)
-						}
+				guard generation == processGeneration else { return }
+				processedImages = []
+				for url in urls {
+					if let data = try? Data(contentsOf: url), let img = NSImage(data: data) {
+						processedImages.append(img)
 					}
-					isLoading = false
 				}
 			} catch {
-				await MainActor.run {
-					errorMessage = "Processing failed: \(error.localizedDescription)"
-					isLoading = false
-				}
+				guard generation == processGeneration else { return }
+				errorMessage = "Processing failed: \(error.localizedDescription)"
 			}
+			guard generation == processGeneration else { return }
+			isLoading = false
 		}
 	}
 }

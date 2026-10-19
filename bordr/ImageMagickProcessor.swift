@@ -25,8 +25,12 @@ class ImageMagickProcessor {
 		throw ImageMagickError.executableNotFound
 	}
 
-	/// Runs a prepared `Process` and bridges its termination into `async`.
-	private func run(_ process: Process) async throws {
+	/// Runs `magick` with an argument vector (no shell) and bridges it into `async`.
+	private func run(arguments: [String]) async throws {
+		let process = Process()
+		process.executableURL = URL(fileURLWithPath: try magickPath())
+		process.arguments = arguments
+
 		let pipe = Pipe()
 		process.standardOutput = pipe
 		process.standardError = pipe
@@ -56,27 +60,20 @@ class ImageMagickProcessor {
 		}
 	}
 
-	private func makeShellProcess(command: String) -> Process {
-		let process = Process()
-		process.executableURL = URL(fileURLWithPath: "/bin/bash")
-		process.arguments = ["-c", command]
-		return process
-	}
-
 	// MARK: - processImage()
 
-	/// Processes a single image using an ImageMagick CLI command.
+	/// Processes a single image using an ImageMagick argument list.
 	/// - Returns: The URL of the successfully processed output image.
 	func processImage(inputPath: URL, outputPath: URL, commandArguments: [String]) async throws -> URL {
 		guard FileManager.default.fileExists(atPath: inputPath.path) else {
 			throw ImageMagickError.fileNotFound(inputPath)
 		}
 
-		var parts = [try magickPath().shellEscaped(), inputPath.path.shellEscaped()]
-		parts.append(contentsOf: commandArguments)
-		parts.append(outputPath.path.shellEscaped())
+		var arguments = [inputPath.path]
+		arguments.append(contentsOf: commandArguments)
+		arguments.append(outputPath.path)
 
-		try await run(makeShellProcess(command: parts.joined(separator: " ")))
+		try await run(arguments: arguments)
 		return outputPath
 	}
 
@@ -90,18 +87,18 @@ class ImageMagickProcessor {
 			}
 		}
 
-		var parts = [try magickPath().shellEscaped(), "montage"]
-		parts.append(contentsOf: inputPaths.map { $0.path.shellEscaped() })
-		parts.append(contentsOf: commandArguments)
-		parts.append(outputPath.path.shellEscaped())
+		var arguments = ["montage"]
+		arguments.append(contentsOf: inputPaths.map(\.path))
+		arguments.append(contentsOf: commandArguments)
+		arguments.append(outputPath.path)
 
-		try await run(makeShellProcess(command: parts.joined(separator: " ")))
+		try await run(arguments: arguments)
 		return outputPath
 	}
 
 	// MARK: - process4Scroll()
 
-	/// Slices a single image into several output files in one shell invocation.
+	/// Slices a single image into several output files.
 	///
 	/// Each entry in `commandArguments` describes one slice (without its output
 	/// path); the matching entry in `outputPaths` receives the result.
@@ -113,45 +110,29 @@ class ImageMagickProcessor {
 			throw ImageMagickError.commandFailed(statusCode: -1, message: "Mismatched scroll arguments and outputs.")
 		}
 
-		let magick = try magickPath().shellEscaped()
-		let commands: [String] = zip(commandArguments, outputPaths).map { args, output in
-			var parts = [magick, inputPath.path.shellEscaped()]
-			parts.append(contentsOf: args)
-			parts.append(output.path.shellEscaped())
-			return parts.joined(separator: " ")
+		for (args, output) in zip(commandArguments, outputPaths) {
+			var arguments = [inputPath.path]
+			arguments.append(contentsOf: args)
+			arguments.append(output.path)
+			try await run(arguments: arguments)
 		}
-
-		try await run(makeShellProcess(command: commands.joined(separator: " && ")))
 		return outputPaths
 	}
 }
 
 enum ImageMagickError: Error, LocalizedError {
 	case fileNotFound(URL)
-	case fileAlreadyExists(URL)
 	case commandFailed(statusCode: Int32, message: String)
 	case executableNotFound
 
 	var errorDescription: String? {
 		switch self {
 			case .fileNotFound(let url): return "Input file not found: \(url.lastPathComponent)"
-			case .fileAlreadyExists(let url): return "Output file already exists: \(url.lastPathComponent)"
 			case .commandFailed(let statusCode, let message):
 				let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
 				return "ImageMagick failed (\(statusCode)): \(trimmed.isEmpty ? "unknown error" : trimmed)"
 			case .executableNotFound:
 				return "ImageMagick 'magick' not found. Install it via Homebrew (e.g. /opt/homebrew/bin/magick)."
 		}
-	}
-}
-
-// MARK: - Shell escaping helper
-
-extension String {
-	func shellEscaped() -> String {
-		guard self.rangeOfCharacter(from: CharacterSet(charactersIn: " \"'\\$!*?[]{}<>()`~#&|;")) != nil else {
-			return self
-		}
-		return "'" + self.replacingOccurrences(of: "'", with: "'\\''") + "'"
 	}
 }
